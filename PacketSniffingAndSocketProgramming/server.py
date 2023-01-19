@@ -9,7 +9,6 @@
 #   - broadcasting
 #   - Direct Messaging
 #   - Blocking Messages
-#   - P2p Messaging
 
 import threading
 import socket
@@ -25,6 +24,7 @@ blockTime = 60
 currUsers = {}
 offlineUsers = {}
 clientConnections = {}
+blockedIndividuals = {}
 
 def login(socket):
     attempts = 0
@@ -92,9 +92,29 @@ def lastOn(socket, targetName):
         time = offlineUsers(targetName)
         socket.send(f"User {targetName} was last online {time}\n")
     except:
-        socket.send(f"User {targetName} was last online ""unavailable""")
+        if targetName in currUsers.values():
+            socket.send(f"User {targetName} is currently online\n")
+        else:
+            socket.send(f"User {targetName} was last online ""unavailable""\n")
 
+def broadcast(msg, fromUUID):
+    showName = currUsers[fromUUID]
+    for s in clientConnections.values():
+        clientUUID = {i for i in clientConnections if clientConnections[i] == s}
+        if (clientUUID, s) in blockedIndividuals.items() or clientConnections[fromUUID] == s:
+            continue
 
+        s.sendall(f"{showName}: {msg}\n")
+
+def dm(msg, fromUUID, toName):
+    toUUID = {i for i in currUsers if currUsers[i] == toName}
+    fromName = currUsers[fromUUID]
+    if (toUUID, clientConnections[fromUUID]) not in blockedIndividuals.items():
+        clientConnections[toUUID].sendall(f"{fromName}: {msg}\n")
+
+def blockUser(blockerUUID, blockeeName):
+    blockeeUUID = {i for i in currUsers if currUsers[i] == blockeeName}
+    blockedIndividuals.update(blockerUUID, clientConnections[blockeeUUID])
 
 def handleStandardCommands(socket):
 
@@ -103,16 +123,37 @@ def handleStandardCommands(socket):
         msg = socket.recv(1024).split("|")
 
         if msg[1] == "whoelse":
-            currentlyOnline(socket, msg[0])
-        if msg[1] == "laston":
-            lastOn(socket,msg[2])
-        if msg[1] == "broadcast":
-            broadcast(socket, msg[2])
-        if msg[1] == "logout":
-            logout(socket)
-            break
-
-
+            if len(msg) == 2:
+                currentlyOnline(socket, msg[0])
+            else:
+                socket.sendall("Incorrect Arguments provided: <whoelse>\n")
+        elif msg[1] == "laston":
+            if len(msg) == 3:
+                lastOn(socket,msg[2])
+            else:
+                socket.sendall("Incorrect Arguments provided: <laston> <targetname>\n")
+        elif msg[1] == "broadcast":
+            if len(msg) == 3:
+                broadcast(msg[2], msg[0])
+            else:
+                socket.sendall("Incorrect Arguments provided: <broadcast> <message>\n")
+        elif msg[1] == "dm":
+            if len(msg) == 4:
+                dm(msg[3], msg[0], msg[2])
+            else:
+                socket.sendall("Incorrect Arguments provided: <dm> <msg> <Person>\n")
+        elif msg[1] == "block":
+            if len(msg) == 3:
+                blockUser(msg[0],msg[2])
+            else:
+                socket.sendall("Incorrect Arguments provided : <block> <Person>\n")
+        elif msg[1] == "logout":
+            if len(msg) == 2:
+                logout(socket)
+                break
+            else:
+                socket.sendall("No Arguments required for logout\n")
+    
 
 
 
@@ -120,8 +161,9 @@ def handleStandardCommands(socket):
 def HandleConnection(socket, addr):
 
     while True:
-        socket.sendall("Please Either Login or Register")
-        splitD = socket.recv(1024).split("|")
+        socket.sendall(("Please Either use login or register").encode("utf-8"))
+        time.sleep(1)
+        splitD = socket.recv(1024).decode("utf-8").split("|")
 
         if splitD[1] == "login":
             attempt = login(socket)
